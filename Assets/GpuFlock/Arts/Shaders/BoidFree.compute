@@ -1,0 +1,65 @@
+﻿//
+//	Created by jiadong chen
+//	http://www.chenjd.me
+//  用来在gpu上实现集群效果
+//
+
+#pragma kernel CSMain
+
+//封装计算单个boid时所需要的数据
+struct Boid
+{
+	float3 pos;
+	float3 rot;
+	float deg;
+	float noise;
+};
+
+RWStructuredBuffer<Boid> boidBuffer;
+Texture2D<float4> grids;
+Texture2D<float4> noise;
+
+float deltaTime;
+
+int cols;
+int rows;
+float gridSize;
+
+[numthreads(128,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	Boid boid = boidBuffer[id.x];
+	float3 pos = boid.pos;
+	float3 rot = boid.rot;
+	boid.noise += 10*deltaTime;
+
+	boid.deg += (noise[float2(fmod(boid.noise,256), fmod((boid.noise / 256) , 256))].x - 0.4518434) * 0.02;
+
+	float3 direction = float3(cos(boid.deg),0,sin(boid.deg));
+
+	boid.rot = direction;
+
+	float3 targPos = boid.pos + boid.rot * 10 * deltaTime;
+
+	int gridX = floor(targPos.x / 50.0);
+	int gridY = floor(targPos.z / 50.0);
+	if (gridX >= 0 && gridX < 20 && gridY >= 0 && gridY < 20) {
+		if (grids[float2(gridX, gridY)].z == 0)
+			boid.pos = targPos;
+		else {
+			float3 maxPosition = float3(gridX * 50, 0, gridY * 50);
+			if (maxPosition.x < targPos.x && maxPosition.x >= boid.pos.x)
+				targPos.x = maxPosition.x;
+			else if ((maxPosition.x + 50) > targPos.x && (maxPosition.x + 50) <= boid.pos.x)
+				targPos.x = max(maxPosition.x + 50, targPos.x);
+
+			if (maxPosition.z < targPos.z && maxPosition.z >= boid.pos.z)
+				targPos.z = min(maxPosition.z, targPos.z);
+			if ((maxPosition.z + 50) > targPos.z && (maxPosition.z + 50) <= boid.pos.z)
+				targPos.z = max(maxPosition.z + 50, targPos.z);
+
+			boid.pos = targPos;
+		}
+	}
+	boidBuffer[id.x] = boid;
+}
